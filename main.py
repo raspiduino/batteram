@@ -169,7 +169,7 @@ arm.connect("ws://192.168.43.199/ws")
 arm.pwm[0] = DROP_S1_PWM
 arm.pwm[1] = PREPARE_PWM[0]
 arm.pwm[2] = PREPARE_PWM[1]
-arm.pwm[3] = INIT_PWM[3]
+arm.pwm[3] = 170
 arm.pwm[4] = GRIP_OFF
 arm.pwm[5] = BELT_FORWARD[0]
 arm.pwm[6] = BELT_FORWARD[1]
@@ -180,6 +180,7 @@ arm.send()
 def grip_cycle(d, s4):
     # Move from home to pickup position and stop the coveyor belt
     arm.pwm[0] = PICK_S1_PWM
+    arm.pwm[3] = s4
     arm.pwm[5] = BELT_STOP[0]
     arm.pwm[6] = BELT_STOP[1]
     arm.send()
@@ -193,7 +194,6 @@ def grip_cycle(d, s4):
     p = PWM_TABLE[d]
     arm.pwm[1] = p[0]
     arm.pwm[2] = p[1]
-    arm.pwm[3] = s4
     arm.send()
     sleep(0.5)
 
@@ -205,14 +205,14 @@ def grip_cycle(d, s4):
     # Move back to prepare position
     arm.pwm[1] = PREPARE_PWM[0]
     arm.pwm[2] = PREPARE_PWM[1]
-    arm.pwm[3] = INIT_PWM[3]
+    arm.pwm[3] = 170
     arm.send()
     sleep(0.5)
 
     # Move to drop position
     arm.pwm[0] = DROP_S1_PWM
     arm.send()
-    sleep(0.5)
+    sleep(1)
 
     # Drop the object
     arm.pwm[1] = DROP_PWM[0]
@@ -326,16 +326,24 @@ while True:
         print(f"[Object] Distance = {d}cm")
 
         # Calculate object's orientation angle
-        #obj = inputImage[y0:y1, x0:x1] # Get only the object's image
-        #outimg, o_angle = process_angle(obj)
-        #inputImage[y0:y1, x0:x1] = outimg # Replace the object's image with the one has orientation drawn
+        obj = inputImage[y0:y1, x0:x1] # Get only the object's image
+        outimg, o_angle = process_angle(obj)
+        inputImage[y0:y1, x0:x1] = outimg # Replace the object's image with the one has orientation drawn
         #o_angle = math.degrees(o_angle) # Convert to degree
 
-        #print(f"[Object] Object orientation angle: {o_angle} deg")
+        print(f"[Object] Object orientation angle: {o_angle} rad")
+
+        # Calculate PWM value for servo 4
+        a4 = 90 + o_angle*180/math.pi
+        s4 = None
+        if a4 >= 145:
+            s4 = 170 - abs(180 - a4)*DEG2PWM
+        else:
+            s4 = 170 + a4*DEG2PWM
         
         # Do a grip cycle
         print(f"[Control] Do grip cycle")
-        grip_cycle(d, INIT_PWM[3])
+        grip_cycle(d, s4)
         print(f"[Control] Grip cycle done!")
 
         # Print the time needed for the whole cycle

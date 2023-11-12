@@ -27,7 +27,7 @@ PROX_END = 600
 
 # Default init PWM values
 INIT_PWM = [115,354,72,170,500,0,0]
-GRIP_ON = 90
+GRIP_ON = 70
 GRIP_OFF = 500
 
 # servo 1 pwm values for each actions

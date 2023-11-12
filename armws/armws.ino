@@ -13,6 +13,9 @@ const char *hostname = "bot.io";
 const byte DNS_PORT = 53;
 IPAddress apIP(192, 168, 4, 1);
 
+// WiFi type
+bool connect_to_AP = true;
+
 // PWM control object
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 
@@ -64,6 +67,7 @@ void setup() {
   WiFi.setTxPower(WIFI_POWER_19_5dBm);
   if(!connectWiFi()) {
     // Cannot connect, create AP
+    connect_to_AP = false;
     WiFi.mode(WIFI_AP);
     WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
     WiFi.softAP(ssid, password);
@@ -123,7 +127,7 @@ void setup() {
 
 void loop() {
   // Auto connect back to WiFi if disconnected
-  if (WiFi.status() != WL_CONNECTED) {
+  if (WiFi.status() != WL_CONNECTED && connect_to_AP) {
     connectWiFi();
   }
 
