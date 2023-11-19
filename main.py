@@ -164,6 +164,7 @@ def process_angle(src):
 # Init control
 arm = Arm()
 arm.connect("ws://192.168.43.199/ws")
+#arm.connect("ws://192.168.4.1/ws")
 
 # Move to home position and start the conveyor belt
 arm.pwm[0] = DROP_S1_PWM
@@ -177,10 +178,11 @@ arm.send()
 
 # A simple grip cycle
 # Take d (object's distance from root) and s4 (servo 4's PWM value) as input
-def grip_cycle(d, s4):
+def grip_cycle(d, s4, grip_off):
     # Move from home to pickup position and stop the coveyor belt
     arm.pwm[0] = PICK_S1_PWM
     arm.pwm[3] = s4
+    arm.pwm[4] = grip_off
     arm.pwm[5] = BELT_STOP[0]
     arm.pwm[6] = BELT_STOP[1]
     arm.send()
@@ -200,7 +202,7 @@ def grip_cycle(d, s4):
     # Grip the object
     arm.pwm[4] = GRIP_ON
     arm.send()
-    sleep(0.8)
+    sleep(1.2)
 
     # Move back to prepare position
     arm.pwm[1] = PREPARE_PWM[0]
@@ -217,7 +219,7 @@ def grip_cycle(d, s4):
     # Drop the object
     arm.pwm[1] = DROP_PWM[0]
     arm.pwm[2] = DROP_PWM[1]
-    arm.pwm[4] = GRIP_OFF
+    arm.pwm[4] = grip_off
     arm.send()
     sleep(0.5)
 
@@ -226,126 +228,156 @@ def grip_cycle(d, s4):
     arm.pwm[2] = PREPARE_PWM[1]
     arm.send()
 
-# Main loop
-while True:
-    # Start the conveyor belt
+def belt_forward():
     arm.pwm[5] = BELT_FORWARD[0]
     arm.pwm[6] = BELT_FORWARD[1]
     arm.send()
 
+def belt_forward_nonstop():
+    arm.pwm[5] = BELT_FORWARD[0]
+    arm.pwm[6] = BELT_FORWARD[1] - 1
+    arm.send()
+
+def belt_backward():
+    arm.pwm[5] = BELT_BACKWARD[0]
+    arm.pwm[6] = BELT_BACKWARD[1]
+    arm.send()
+
+def belt_stop():
+    arm.pwm[5] = BELT_STOP[0]
+    arm.pwm[6] = BELT_STOP[1]
+    arm.send()
+
+# Start conveyor belt
+belt_forward()
+
+# Main loop
+while True:
+    belt_forward()
     if arm.ws.recv() == "found":
-        # Start counting time
-        t0 = time.time()
+        for _ in range(2):
+            # Start counting time
+            t0 = time.time()
 
-        # Stop the conveyor belt
-        arm.pwm[5] = BELT_STOP[0]
-        arm.pwm[6] = BELT_STOP[1]
-        arm.send()
+            # Stop conveyor belt
+            belt_stop()
 
-        # Wait for the object to stop moving
-        sleep(0.4)
+            # Wait for the object to stop moving
+            sleep(0.4)
 
-        # Capture frame
-        ret, inputImage = cap.read()
-        ret, inputImage = cap.read()
-        ret, inputImage = cap.read()
-        if not ret:
-            print("[Detect] Frame capture error!")
+            # Capture frame
+            ret, inputImage = cap.read()
+            ret, inputImage = cap.read()
+            ret, inputImage = cap.read()
+            if not ret:
+                print("[Detect] Frame capture error!")
 
-        # Get the middle 704x704 part of the image
-        inputImage = inputImage[0:704, 288:992]
+            # Get the 704x704 part of the image
+            #inputImage = inputImage[0:704, 288:992]
+            inputImage = inputImage[0:704, 120:824]
 
-        # Write the image (for retraining?)
-        img_index += 1
-        print("Saving image imglog\\" + str(img_index) + ".png")
-        cv2.imwrite("imglog\\" + str(img_index) + ".png", inputImage)
+            # Write the image (for retraining?)
+            img_index += 1
+            print("Saving image imglog\\" + str(img_index) + ".png")
+            cv2.imwrite("imglog\\" + str(img_index) + ".png", inputImage)
 
-        # Run detection
-        outs = run_detect(inputImage)
+            # Run detection
+            outs = run_detect(inputImage)
 
-        # Parse result
-        class_ids, confidences, boxes = parse_all(outs[0])
+            # Parse result
+            class_ids, confidences, boxes = parse_all(outs[0])
 
-        # Return if no object detected
-        if len(class_ids) < 1:
-            print("[Detect] Nothing detected!")
-            arm.pwm[5] = BELT_FORWARD[0]
-            arm.pwm[6] = BELT_FORWARD[1] - 1
-            arm.send()
-            sleep(1)
-            continue
+            # Return if no object detected
+            if len(class_ids) < 1:
+                print("[Detect] Nothing detected!")
+                belt_forward_nonstop()
+                sleep(1)
+                belt_forward()
+                break
 
-        # Get the object closest to the left on the image, and not out of Y range
-        target_obj_id = 0
-        target_obj_x0 = 9999
-        for i in range(len(boxes)):
-            x0 = boxes[i][0].item()
-            y0 = boxes[i][1].item()
-            h  = boxes[i][3].item()
+            # Get the object closest to the left on the image, and not out of Y range
+            target_obj_id = 0
+            target_obj_x0 = 9999
+            for i in range(len(boxes)):
+                x0 = boxes[i][0].item()
+                y0 = boxes[i][1].item()
+                h  = boxes[i][3].item()
+                y1 = y0 + h
+                if x0 < target_obj_x0 and y0 > D2Y[16] and y1 < D2Y[27]:
+                    # If current object is closer to the left than the previous one
+                    # and not out of Y range
+                    target_obj_x0 = x0
+                    target_obj_id = i
+
+            # After we selected the object, get its info
+            class_id = class_ids[target_obj_id]
+            confidence = confidences[target_obj_id]
+            box = boxes[target_obj_id]
+
+            # Get object's box location
+            y0 = box[1].item()
+            h  = box[3].item()
             y1 = y0 + h
-            if x0 < target_obj_x0 and y0 > D2Y[16] and y1 < D2Y[27]:
-                # If current object is closer to the left than the previous one
-                # and not out of Y range
-                target_obj_x0 = x0
-                target_obj_id = i
+            yc = y0 + h//2 # Center
 
-        # After we selected the object, get its info
-        class_id = class_ids[target_obj_id]
-        confidence = confidences[target_obj_id]
-        box = boxes[target_obj_id]
+            x0 = box[0].item()
+            w  = box[2].item()
+            x1 = x0 + h
+            xc = x0 + w//2 # Center
 
-        # Get object's box location
-        y0 = box[1].item()
-        h  = box[3].item()
-        y1 = y0 + h
-        yc = y0 + h//2 # Center
+            # Print information about the selected object
+            print(f"[Object] Object selected: {CLASS_NAMES[class_id]} @ {x0},{y0},{xc},{yc} (x0,y0,xc,yc) conf={confidence}")
 
-        x0 = box[0].item()
-        w  = box[2].item()
-        x1 = x0 + h
-        xc = x0 + w//2 # Center
+            # If the object is out of gripping range -> run the coveyor belt in reverse direction
+            if (xc < PROX_START):
+                print(f"[Object] Out of gripping range. Moving it backward")
+                belt_backward()
+                sleep(2)
+                belt_stop()
+                break
+            elif (xc > PROX_END):
+                print(f"[Object] Out of gripping range. Moving it forward")
+                belt_forward()
+                sleep(2)
+                belt_stop()
+                break
+            
+            # Calculate object's y distance from arm's root
+            d = round((D2Y[16] - yc)*P2C) + 17
 
-        # Print information about the selected object
-        print(f"[Object] Object selected: {CLASS_NAMES[class_id]} @ {x0},{y0},{xc},{yc} (x0,y0,xc,yc) conf={confidence}")
+            print(f"[Object] Distance = {d}cm")
 
-        # If the object is out of gripping range -> run the coveyor belt in reverse direction
-        if (xc < PROX_START):
-            print(f"[Object] Out of gripping range. Moving it backward")
-            arm.pwm[5] = BELT_BACKWARD[0]
-            arm.pwm[6] = BELT_BACKWARD[1]
-            arm.send()
-        elif (xc > PROX_END):
-            print(f"[Object] Out of gripping range. Moving it forward")
-            arm.pwm[5] = BELT_FORWARD[0]
-            arm.pwm[6] = BELT_FORWARD[1]
-            arm.send()
-        
-        # Calculate object's y distance from arm's root
-        d = round((D2Y[16] - yc)*P2C) + 16
+            # Calculate object's orientation angle
+            obj = inputImage[y0:y1, x0:x1] # Get only the object's image
+            outimg, o_angle = process_angle(obj)
+            #inputImage[y0:y1, x0:x1] = outimg # Replace the object's image with the one has orientation drawn
+            #o_angle = math.degrees(o_angle) # Convert to degree
+            o_angle = int(np.rad2deg(o_angle)) + 90
 
-        print(f"[Object] Distance = {d}cm")
+            print(f"[Object] Object orientation angle: {o_angle} degree")
 
-        # Calculate object's orientation angle
-        obj = inputImage[y0:y1, x0:x1] # Get only the object's image
-        outimg, o_angle = process_angle(obj)
-        inputImage[y0:y1, x0:x1] = outimg # Replace the object's image with the one has orientation drawn
-        #o_angle = math.degrees(o_angle) # Convert to degree
+            # Calculate PWM value for servo 4
+            s4 = None
+            if o_angle < 0:
+                if o_angle < -45:
+                    # Turn to right, because servo cannot turn left this much
+                    s4 = 170 + (180 + o_angle)*DEG2PWM
+                else:
+                    # Turn to left
+                    s4 = 170 + o_angle*DEG2PWM # Remember o_angle is negative now
+            else:
+                if o_angle >= 145:
+                    # Turn to left, because servo cannot turn right this much
+                    s4 = 170 - (180 - o_angle)*DEG2PWM
+                else:
+                    # Turn to right
+                    s4 = 170 + o_angle*DEG2PWM
 
-        print(f"[Object] Object orientation angle: {o_angle} rad")
+            # Do a grip cycle
+            print(f"[Control] Do grip cycle")
+            grip_cycle(d, s4, 400)
+            print(f"[Control] Grip cycle done!")
 
-        # Calculate PWM value for servo 4
-        a4 = 90 + o_angle*180/math.pi
-        s4 = None
-        if a4 >= 145:
-            s4 = 170 - abs(180 - a4)*DEG2PWM
-        else:
-            s4 = 170 + a4*DEG2PWM
-        
-        # Do a grip cycle
-        print(f"[Control] Do grip cycle")
-        grip_cycle(d, s4)
-        print(f"[Control] Grip cycle done!")
-
-        # Print the time needed for the whole cycle
-        t1 = time.time()
-        print("[Cycle] Full cycle time=", t1 - t0)
+            # Print the time needed for the whole cycle
+            t1 = time.time()
+            print("[Cycle] Full cycle time=", t1 - t0)

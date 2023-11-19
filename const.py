@@ -6,6 +6,7 @@ P2C = 1/37 # cm = pixel * p2c
 AB_X = 513 # Arm base's x (in pixel)
 DEG2PWM = 2 # degree to PWM. 1 degree = 2 pwm value
 D2Y = {16: 525, 27: 106} # Map distance to y (in pixel) on the image
+BELT_SPEED = 100 # Conveyor belt speed (pixels/sec)
 
 # Input image constants
 CAM_ID = 1
@@ -15,15 +16,15 @@ CAM_H = 720
 # Image processing contants
 INPUT_WIDTH = 704
 INPUT_HEIGHT = 704
-MODEL_NAME = "best.onnx" # Or best.small.onnx
+MODEL_NAME = "models\\v3.onnx" # Choose your model weight
 SCORE_THRESHOLD = 0.9
 NMS_THRESHOLD = 0.8
 CLASS_NAMES = ["9V", "AA"]
 BB_COLORS = [(255, 255, 0), (0, 255, 0), (0, 255, 255), (255, 0, 0)]
 
 # Proximity sensor's x location range on the image (in pixel)
-PROX_START = 415
-PROX_END = 600
+PROX_START = 519
+PROX_END = 704
 
 # Default init PWM values
 INIT_PWM = [115,354,72,170,500,0,0]
